@@ -1,0 +1,16 @@
+[workspace]
+members = [
+    "tool",
+    "cachekit",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+description = "Toolkit for parsing HTTP proxy caches"
+documentation = "https://github.com/jpeach/prroxycache"
+license = "Apache-2.0"
+
+authors = [
+    "James Peach <jpeach@apache.org>",
+]
