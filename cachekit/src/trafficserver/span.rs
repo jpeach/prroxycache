@@ -15,6 +15,7 @@ pub const STORE_BLOCK_SIZE: u64 = 8192;
 /// is not known.
 pub const SPAN_START_OFFSET: u64 = 16 /* START_BLOCKS */ * CACHE_BLOCK_SIZE;
 
+// TrafficServer calls this type "struct DiskHeader".
 #[derive(Default)]
 pub struct SpanHeader {
     // Disk magic, DISK_HEADER_MAGIC.
@@ -41,6 +42,9 @@ impl fmt::Debug for SpanHeader {
 }
 
 impl SpanHeader {
+    /// SIZE_BYTES is the number of bytes that the on-disk layout
+    /// consumes. This is the same as the in-memory "struct DiskHeader"
+    /// layout, so it includes field alignment inserted by the compiler.
     pub const SIZE_BYTES: usize =
     4 + /* magic */
     4 + /* num_volumes */
@@ -60,25 +64,32 @@ impl SpanHeader {
             return Err(io::Error::from(io::ErrorKind::InvalidInput));
         }
 
-        h.magic = u32::from_le_bytes(bytes[0..4].try_into().unwrap());
-        if h.magic == DISK_HEADER_MAGIC {
-            h.num_volumes = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
-            h.num_free = u32::from_le_bytes(bytes[8..12].try_into().unwrap());
-            h.num_used = u32::from_le_bytes(bytes[12..16].try_into().unwrap());
-            h.num_diskvol_blks = u32::from_le_bytes(bytes[16..20].try_into().unwrap());
-            h.num_blocks = u64::from_le_bytes(bytes[24..32].try_into().unwrap());
-            return Ok(h);
+        h.magic = u32::from_ne_bytes(bytes[0..4].try_into().unwrap());
+
+        // If the magic is byte-swapped, we are a different endianness
+        // than the process that wrote the cache. No support for that
+        // yet.
+        if h.magic == u32::swap_bytes(DISK_HEADER_MAGIC) {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "cache is in non-native byte order",
+            ));
         }
 
-        h.magic = u32::from_be_bytes(bytes[0..4].try_into().unwrap());
-        if h.magic == DISK_HEADER_MAGIC {
-            // TODO(jpeach) There's no formal on-disk byte order, so
-            // the cache could have been written on a big-endian
-            // machine. Unlikely, but possible.
-            return Err(io::Error::from(io::ErrorKind::Unsupported));
+        if h.magic != DISK_HEADER_MAGIC {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid cache header",
+            ));
         }
 
-        Err(io::Error::from(io::ErrorKind::InvalidData))
+        h.num_volumes = u32::from_ne_bytes(bytes[4..8].try_into().unwrap());
+        h.num_free = u32::from_ne_bytes(bytes[8..12].try_into().unwrap());
+        h.num_used = u32::from_ne_bytes(bytes[12..16].try_into().unwrap());
+        h.num_diskvol_blks = u32::from_ne_bytes(bytes[16..20].try_into().unwrap());
+        h.num_blocks = u64::from_ne_bytes(bytes[24..32].try_into().unwrap());
+
+        Ok(h)
     }
 }
 
@@ -139,6 +150,10 @@ impl Span {
 
     pub fn size_blocks(self: &Self) -> u64 {
         return self.size_bytes / STORE_BLOCK_SIZE;
+    }
+
+    pub fn size_bytes(self: &Self) -> u64 {
+        return self.size_bytes;
     }
 
     pub fn read_header(self: &Self) -> io::Result<SpanHeader> {
