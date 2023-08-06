@@ -6,6 +6,10 @@ use std::path::{Path, PathBuf};
 
 use super::CACHE_BLOCK_SIZE;
 
+pub const SPAN_BLOCK_TYPE_NONE: u32 = 0; // CACHE_NONE_TYPE
+pub const SPAN_BLOCK_TYPE_HTTP: u32 = 1; // CACHE_HTTP_TYPE
+pub const SPAN_BLOCK_TYPE_RTSP: u32 = 2; // CACHE_RTSP_TYPE
+
 pub const DISK_HEADER_MAGIC: u32 = 0xABCD1237;
 
 pub const STORE_BLOCK_SIZE: u64 = 8192;
@@ -93,6 +97,87 @@ impl SpanHeader {
     }
 }
 
+// TrafficServer calls this type "struct DiskVolBlock".
+#[derive(Default)]
+pub struct SpanBlock {
+    /// Offset in bytes from the startof the span device to the where?
+    offset: u64,
+    len: u64, // Block length in cache blocks.
+    num: u32,
+    flags: u32, // Compiler bitfield, with type:3 and free:1 elements.
+}
+
+impl SpanBlock {
+    pub const SIZE_BYTES: usize =
+        8 +/* offset */
+        8 + /* len */
+        4 + /* num */
+        4 /* flags */
+        ;
+
+    /// block_type returns the type of the span, block, which is encoded
+    /// in the top 3 bits of the flags field.
+    pub fn block_type(self: &Self) -> u32 {
+        self.flags & 0x00000007
+    }
+
+    /// is_free returns whether the block is marked as a free block,
+    /// which is encoded in bit 4 of the block flags.
+    pub fn is_free(self: &Self) -> bool {
+        self.flags & 0x00000008 == 0x00000008
+    }
+
+    pub fn size_bytes(self: &Self) -> u64 {
+        self.len * CACHE_BLOCK_SIZE
+    }
+
+    pub fn size_blocks(self: &Self) -> u64 {
+        self.len
+    }
+
+    pub fn number(self: &Self) -> u32 {
+        self.num
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> io::Result<SpanBlock> {
+        let mut b = SpanBlock {
+            ..Default::default()
+        };
+
+        if bytes.len() < SpanBlock::SIZE_BYTES {
+            return Err(io::Error::from(io::ErrorKind::InvalidInput));
+        }
+
+        b.offset = u64::from_ne_bytes(bytes[0..8].try_into().unwrap());
+        b.len = u64::from_ne_bytes(bytes[8..16].try_into().unwrap());
+        b.num = u32::from_ne_bytes(bytes[16..20].try_into().unwrap());
+        b.flags = u32::from_ne_bytes(bytes[20..24].try_into().unwrap());
+
+        Ok(b)
+    }
+}
+
+impl fmt::Debug for SpanBlock {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let default_name = self.block_type().to_string();
+        let type_name = match self.block_type() {
+            SPAN_BLOCK_TYPE_NONE => "none",
+            SPAN_BLOCK_TYPE_HTTP => "http",
+            SPAN_BLOCK_TYPE_RTSP => "rtsp",
+            _ => default_name.as_str(),
+        };
+
+        f.debug_struct("SpanBlock")
+            .field("number", &self.number())
+            .field("size (bytes)", &self.size_bytes())
+            .field("size (cache blocks)", &self.size_blocks())
+            .field("offset (bytes)", &self.offset)
+            .field("type", &type_name)
+            .field("free", &self.is_free())
+            .finish()
+    }
+}
+
 /// Span is a single contiguous block of storage, either a regular file or a raw disk.
 ///
 /// While the TrafficServer cache documentation can the udnerlying
@@ -167,5 +252,27 @@ impl Span {
         }
 
         SpanHeader::from_bytes(&header_bytes)
+    }
+
+    /// read_block reads the nth SpanBlock record from the span. The caller is responsible
+    /// for knowing that block_num is a valid block number (starting from index 0).
+    pub fn read_block(self: &Self, block_num: usize) -> io::Result<SpanBlock> {
+        // Span block records follow immediately after the span header. There
+        // could be compiler alignment separating the two, but since the header
+        // is aligned and it's size is 32 bytes, the span block records always
+        // have 8 byte alignment with no extra padding.
+
+        let block_offset = SPAN_START_OFFSET as usize
+            + SpanHeader::SIZE_BYTES
+            + (block_num * SpanBlock::SIZE_BYTES);
+
+        let mut block_bytes: [u8; SpanBlock::SIZE_BYTES] = [0; SpanBlock::SIZE_BYTES];
+
+        let nbytes = self.file.read_at(&mut block_bytes, block_offset as u64)?;
+        if nbytes < SpanBlock::SIZE_BYTES {
+            return Err(io::Error::from(io::ErrorKind::InvalidData));
+        }
+
+        SpanBlock::from_bytes(&block_bytes)
     }
 }
