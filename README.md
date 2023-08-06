@@ -7,10 +7,15 @@ into NGINX once I get that into some reasonable shape.
 
 ## FAQ
 
-Is this good code? No! This is my first Rust project, so I'm bashing on
+### Is this good code?
+
+No! This is my first Rust project, so I'm bashing on
 keys and unlikely to be doing things in good Rust style.
 
-Is this complete? Not in the least.
+### Is this complete?
 
-Why is the repository spelled wrong? I typo'd the repository creation
-and couldn't bebothered to fix it.
+Not in the least.
+
+### Why is the repository spelled wrong?
+
+I typo'd the repository creation and couldn't be bothered to fix it.
