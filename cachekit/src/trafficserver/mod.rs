@@ -1,10 +1,8 @@
+mod disk;
 mod span;
 
 // Re-export span types from the crate.
-pub use span::{Span, SpanHeader};
-
-/// Basic block size for cache storage.
-pub const CACHE_BLOCK_SIZE: u64 = 512;
+pub use span::Span;
 
 pub const DOC_MAGIC: u32 = 0x5F129B13;
 pub const DOC_CORRUPT: u32 = 0xDEADBABE;
