@@ -5,8 +5,7 @@ use std::path::{Path, PathBuf};
 
 use crate::trafficserver::disk;
 use crate::trafficserver::disk::{SpanBlock, SpanHeader};
-
-pub const STORE_BLOCK_SIZE: u64 = 8192;
+use crate::trafficserver::STORE_BLOCK_SIZE;
 
 /// SPAN_START_OFFSET is the number of bytes from the start of a storage
 /// span to the corresponding SpanHeader. Exactly why there is an offset
@@ -48,6 +47,10 @@ impl Span {
 
         // Attempt opening as a regular file.
         Span::from_file(path)
+    }
+
+    pub fn read_at(&self, buf: &mut [u8], offset: u64) -> io::Result<usize> {
+        self.file.read_at(buf, offset)
     }
 
     fn from_file(path: &Path) -> io::Result<Self> {

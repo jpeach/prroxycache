@@ -2,11 +2,16 @@
 use core::fmt;
 use std::io;
 
+use crate::trafficserver::STORE_BLOCK_SIZE;
 /// Basic block size (in bytes) for cache storage.
 pub const CACHE_BLOCK_SIZE: u64 = 512;
 
 /// SPAN_HEADER_MAGIC is the magic number used to identify disk header.
 pub const SPAN_HEADER_MAGIC: u32 = 0xABCD1237;
+
+/// VOL_HEADER_MAGIC is the magic number used to identify VolHeaderFooter structures. Traffic
+/// Server calls this VOL_MAGIC.
+pub const VOL_HEADER_MAGIC: u32 = 0xF1D0F00D;
 
 /// SpanHeader is the header for a Traffic Server cache storage volume (either a file or a block device).
 ///
@@ -132,7 +137,7 @@ impl SpanBlock {
     }
 
     pub fn size_bytes(self: &Self) -> u64 {
-        self.len * CACHE_BLOCK_SIZE
+        self.len * STORE_BLOCK_SIZE
     }
 
     pub fn size_blocks(self: &Self) -> u64 {
@@ -178,6 +183,147 @@ impl fmt::Debug for SpanBlock {
             .field("offset (bytes)", &self.offset)
             .field("type", &type_name)
             .field("free", &self.is_free())
+            .finish()
+    }
+}
+
+// See I_CacheDefs.h.
+const CACHE_DB_MAJOR_VERSION: u16 = 24;
+#[allow(dead_code)]
+const CACHE_DB_MINOR_VERSION: u16 = 2;
+
+const CACHE_DB_MAJOR_VERSION_COMPATIBLE: u16 = 21;
+
+#[derive(Default, PartialEq)]
+pub struct VolHeaderFooter {
+    pub magic: u32, // Stripe header magic, VOL_MAGIC.
+    pub major_version: u16,
+    pub minor_version: u16,
+    pub create_time: i64, // Assuming 64-bit time_t.
+    pub write_pos: i64,
+    pub last_write_pos: i64,
+    pub agg_pos: i64,
+    pub generation: u32,
+    pub phase: u32,
+    pub cycle: u32,
+    pub sync_serial: u32,
+    pub write_serial: u32,
+    pub dirty: u32,
+    pub sector_size: u32,
+    unused: u32,
+}
+
+impl VolHeaderFooter {
+    pub const SIZE_BYTES : usize  =
+    4 + /* magic */
+    2 + /* major_version */
+    2 + /* minor_version */
+    8 + /* create_time */
+    8 + /* write_pos */
+    8 + /* last_write_pos */
+    8 + /* agg_pos */
+    4 + /* generation */
+    4 + /* phase */
+    4 + /* cycle */
+    4 + /* sync_serial */
+    4 + /* write_serial */
+    4 + /* dirty */
+    4 + /* sector_size */
+    4  /* pad */
+    ;
+
+    pub fn from_bytes(bytes: &[u8]) -> io::Result<VolHeaderFooter> {
+        let mut v = VolHeaderFooter {
+            ..Default::default()
+        };
+
+        if bytes.len() < VolHeaderFooter::SIZE_BYTES {
+            return Err(io::Error::from(io::ErrorKind::InvalidInput));
+        }
+
+        v.magic = u32::from_ne_bytes(bytes[0..4].try_into().unwrap());
+
+        if v.magic == u32::swap_bytes(VOL_HEADER_MAGIC) {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "cache is in non-native byte order",
+            ));
+        }
+
+        if v.magic != VOL_HEADER_MAGIC {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "cache is in non-native byte order",
+            ));
+        }
+
+        v.major_version = u16::from_ne_bytes(bytes[4..6].try_into().unwrap());
+        v.minor_version = u16::from_ne_bytes(bytes[6..8].try_into().unwrap());
+        v.create_time = i64::from_ne_bytes(bytes[8..16].try_into().unwrap());
+        v.write_pos = i64::from_ne_bytes(bytes[16..24].try_into().unwrap());
+        v.last_write_pos = i64::from_ne_bytes(bytes[24..32].try_into().unwrap());
+        v.agg_pos = i64::from_ne_bytes(bytes[32..40].try_into().unwrap());
+        v.generation = u32::from_ne_bytes(bytes[40..44].try_into().unwrap());
+        v.phase = u32::from_ne_bytes(bytes[44..48].try_into().unwrap());
+        v.cycle = u32::from_ne_bytes(bytes[48..52].try_into().unwrap());
+        v.sync_serial = u32::from_ne_bytes(bytes[52..56].try_into().unwrap());
+        v.write_serial = u32::from_ne_bytes(bytes[56..60].try_into().unwrap());
+        v.dirty = u32::from_ne_bytes(bytes[60..64].try_into().unwrap());
+        v.sector_size = u32::from_ne_bytes(bytes[64..68].try_into().unwrap());
+
+        // Don't bother deserializing the unused pad field.
+
+        // Traffic Server revved the cache version and we need to update.
+        if v.major_version > CACHE_DB_MAJOR_VERSION {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                format!(
+                    "unsupported cache directory version {}.{}",
+                    v.major_version, v.minor_version
+                ),
+            ));
+        }
+
+        // This is a really old cache file.
+        if v.major_version <= CACHE_DB_MAJOR_VERSION_COMPATIBLE {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                format!(
+                    "incompatible cache directory version {}.{}",
+                    v.major_version, v.minor_version
+                ),
+            ));
+        }
+
+        Ok(v)
+    }
+}
+
+impl fmt::Debug for VolHeaderFooter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use time::format_description::well_known::Rfc3339;
+        use time::OffsetDateTime;
+
+        let create_time = OffsetDateTime::from_unix_timestamp(self.create_time).unwrap();
+        let create_timestr = create_time.format(&Rfc3339).unwrap();
+
+        f.debug_struct("VolHeaderFooter")
+            .field("magic", &format_args!("{:#X}", &self.magic))
+            .field(
+                "version",
+                &format!("{}.{}", self.major_version, self.minor_version),
+            )
+            .field("create_time", &create_timestr)
+            .field("write_pos", &self.write_pos)
+            .field("last_write_pos", &self.last_write_pos)
+            .field("agg_pos", &self.agg_pos)
+            .field("generation", &self.generation)
+            .field("phase", &self.phase)
+            .field("cycle", &self.cycle)
+            .field("sync_serial", &self.sync_serial)
+            .field("write_serial", &self.write_pos)
+            .field("dirty", &self.dirty)
+            .field("sector_size", &self.sector_size)
             .finish()
     }
 }
