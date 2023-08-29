@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use crate::trafficserver::disk;
 use crate::trafficserver::disk::{SpanBlock, SpanHeader};
-use crate::trafficserver::STORE_BLOCK_SIZE;
+use crate::trafficserver::types::{Bytes, StoreBlocks};
 
 /// SPAN_START_OFFSET is the number of bytes from the start of a storage
 /// span to the corresponding SpanHeader. Exactly why there is an offset
@@ -72,12 +72,12 @@ impl Span {
         Err(io::Error::from(io::ErrorKind::Unsupported))
     }
 
-    pub fn size_blocks(self: &Self) -> u64 {
-        return self.size_bytes / STORE_BLOCK_SIZE;
+    pub fn size_blocks(self: &Self) -> StoreBlocks {
+        StoreBlocks::from(self.size_bytes())
     }
 
-    pub fn size_bytes(self: &Self) -> u64 {
-        return self.size_bytes;
+    pub fn size_bytes(self: &Self) -> Bytes {
+        Bytes::from(self.size_bytes)
     }
 
     pub fn read_header(self: &Self) -> io::Result<SpanHeader> {

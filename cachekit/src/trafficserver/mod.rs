@@ -1,5 +1,6 @@
 mod disk;
 mod span;
+mod types;
 
 // Re-export span types from the crate.
 pub use disk::VolHeaderFooter;
@@ -14,7 +15,3 @@ pub const CACHE_DB_MINOR_VERSION: u8 = 2;
 
 pub const CACHE_DIR_MAJOR_VERSION: u8 = 18;
 pub const CACHE_DIR_MINOR_VERSION: u8 = 0;
-
-/// STORE_BLOCK_SIZE is the size in bytes of blocks used for the raw
-/// storage pools.
-pub const STORE_BLOCK_SIZE: u64 = 8192;

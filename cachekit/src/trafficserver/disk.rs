@@ -2,7 +2,8 @@
 use core::fmt;
 use std::io;
 
-use crate::trafficserver::STORE_BLOCK_SIZE;
+use super::types::{Bytes, StoreBlocks};
+
 /// Basic block size (in bytes) for cache storage.
 pub const CACHE_BLOCK_SIZE: u64 = 512;
 
@@ -136,12 +137,12 @@ impl SpanBlock {
         self.flags & 0x00000008 == 0x00000008
     }
 
-    pub fn size_bytes(self: &Self) -> u64 {
-        self.len * STORE_BLOCK_SIZE
+    pub fn size_bytes(self: &Self) -> Bytes {
+        Bytes::from(self.size_blocks())
     }
 
-    pub fn size_blocks(self: &Self) -> u64 {
-        self.len
+    pub fn size_blocks(self: &Self) -> StoreBlocks {
+        StoreBlocks::from(self.len)
     }
 
     pub fn number(self: &Self) -> u32 {
