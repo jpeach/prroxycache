@@ -1,10 +1,15 @@
 mod disk;
 mod span;
 mod types;
+mod vol;
 
 // Re-export span types from the crate.
 pub use disk::VolHeaderFooter;
 pub use span::Span; // XXX
+pub use vol::Vol; // XXX
+
+pub use types::Bytes; // XXX
+pub use types::StoreBlocks; // XXX
 
 pub const DOC_MAGIC: u32 = 0x5F129B13;
 pub const DOC_CORRUPT: u32 = 0xDEADBABE;

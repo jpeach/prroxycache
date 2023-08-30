@@ -39,6 +39,12 @@ impl From<Bytes> for u64 {
 #[derive(Debug, PartialEq)]
 pub struct StoreBlocks(u64);
 
+impl StoreBlocks {
+    pub fn as_bytes(&self) -> u64 {
+        self.0 * STORE_BLOCK_SIZE
+    }
+}
+
 impl fmt::Display for StoreBlocks {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)

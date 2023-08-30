@@ -18,7 +18,7 @@ pub const VOL_HEADER_MAGIC: u32 = 0xF1D0F00D;
 ///
 /// Traffic Server calls this type "struct DiskHeader".
 /// https://github.com/apache/trafficserver/blob/master/iocore/cache/P_CacheDisk.h#L71-L79
-#[derive(Default, PartialEq)]
+#[derive(Copy, Clone, Default, PartialEq)]
 pub struct SpanHeader {
     // Disk magic, SPAN_HEADER_MAGIC.
     pub magic: u32,
@@ -101,7 +101,7 @@ pub const SPAN_BLOCK_TYPE_RTSP: u32 = 2; // CACHE_RTSP_TYPE
 
 /// TrafficServer calls this type "struct DiskVolBlock".
 /// https://github.com/apache/trafficserver/blob/master/iocore/cache/P_CacheDisk.h#L47-L53
-#[derive(Default, PartialEq)]
+#[derive(Copy, Clone, Default, PartialEq)]
 pub struct SpanBlock {
     /// Offset in bytes from the start of the span device to the where?
     offset: u64,
@@ -254,7 +254,7 @@ impl VolHeaderFooter {
         if v.magic != VOL_HEADER_MAGIC {
             return Err(io::Error::new(
                 io::ErrorKind::Unsupported,
-                "cache is in non-native byte order",
+                "invalid VolHeaderFooter header",
             ));
         }
 
