@@ -65,7 +65,7 @@ impl Vol {
 
     fn header_offsets(self: &Self, base: u64) -> (u64, u64, u64, u64) {
         let header_length: u64 = VolHeaderFooter::SIZE_BYTES as u64;
-        let freelist_length: u64 = 2 /* sizeof(uint16_t) */ * (self.segment_count - 1);
+        let freelist_length: u64 = 2 /* sizeof(uint16_t) */ * self.segment_count;
         let directory_length: u64 = StoreBlocks::from(Bytes::from(
             self.buckets_per_segment * ENTRIES_PER_BUCKET * self.segment_count * ENTRY_SIZE,
         ))
@@ -85,7 +85,7 @@ impl Vol {
 // Calculate the size of the volume header (aka stripe metadata) based on the segment information.
 fn directory_length(segment_count: u64, buckets_per_segment: u64) -> u64 {
     let header_length: u64 = VolHeaderFooter::SIZE_BYTES as u64;
-    let freelist_length: u64 = 2 /* sizeof(uint16_t) */ * (segment_count - 1);
+    let freelist_length: u64 = 2 /* sizeof(uint16_t) */ * segment_count;
     let directory_length: u64 = StoreBlocks::from(Bytes::from(
         buckets_per_segment * ENTRIES_PER_BUCKET * segment_count * ENTRY_SIZE,
     ))
