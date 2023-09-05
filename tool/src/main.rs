@@ -1,4 +1,4 @@
-use cachekit::trafficserver::VolHeaderFooter;
+use cachekit::trafficserver::disk;
 use cachekit::trafficserver::{Span, Vol};
 use clap::Parser;
 use std::fmt;
@@ -84,10 +84,10 @@ fn main() {
         // Get the offsets of the first header components.
         let (mut header, mut freelist, mut directory, mut footer) = vol.first_header_offsets();
 
-        let mut volbuf = [0u8; VolHeaderFooter::SIZE_BYTES];
+        let mut volbuf = [0u8; disk::VolHeaderFooter::SIZE_BYTES];
         let mut volheader = s
             .read_at(&mut volbuf, header)
-            .and_then(|_| VolHeaderFooter::from_bytes(&volbuf));
+            .and_then(|_| disk::VolHeaderFooter::from_bytes(&volbuf));
 
         println!(
             "{}",
@@ -100,7 +100,7 @@ fn main() {
 
         let mut volfooter = s
             .read_at(&mut volbuf, footer)
-            .and_then(|_| VolHeaderFooter::from_bytes(&volbuf));
+            .and_then(|_| disk::VolHeaderFooter::from_bytes(&volbuf));
 
         println!("{}", entry::from_offset(freelist, "freelist"));
         println!("{}", entry::from_offset(directory, "directory"));
@@ -119,7 +119,7 @@ fn main() {
 
         volheader = s
             .read_at(&mut volbuf, header)
-            .and_then(|_| VolHeaderFooter::from_bytes(&volbuf));
+            .and_then(|_| disk::VolHeaderFooter::from_bytes(&volbuf));
 
         println!(
             "{}",
@@ -135,7 +135,7 @@ fn main() {
         // always write the second footer?
         volfooter = s
             .read_at(&mut volbuf, footer)
-            .and_then(|_| VolHeaderFooter::from_bytes(&volbuf));
+            .and_then(|_| disk::VolHeaderFooter::from_bytes(&volbuf));
 
         println!("{}", entry::from_offset(freelist, "freelist"));
         println!("{}", entry::from_offset(directory, "directory"));
