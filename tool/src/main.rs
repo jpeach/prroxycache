@@ -1,7 +1,7 @@
 use cachekit::trafficserver::disk;
 use cachekit::trafficserver::{Span, Vol};
 use clap::Parser;
-use std::fmt;
+use std::{fmt, io, mem};
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -41,6 +41,16 @@ impl fmt::Display for entry {
             None => Ok(()),
         }
     }
+}
+
+fn read_freelist(span: &Span, offset: u64, entries: u64) -> io::Result<disk::Freelist> {
+    let mut buf = vec![0u8; entries as usize * mem::size_of::<u16>()];
+
+    let freelist = span
+        .read_at(buf.as_mut_slice(), offset)
+        .and_then(|_| disk::Freelist::from_bytes(buf.as_slice()));
+
+    freelist
 }
 
 fn main() {
@@ -113,6 +123,20 @@ fn main() {
                 label: Some(format!("{:?}", volfooter)),
             }
         );
+
+        let f = read_freelist(&s, freelist, vol.segment_count());
+        if f.is_ok() {
+            let f = f.unwrap();
+            println!("freelist:");
+            for i in 0..f.entries.len() {
+                print!("{:>10}:{:>5}", i, f.entries[i]);
+                if i % 4 == 0 {
+                    println!("");
+                } else {
+                    print!("  ");
+                }
+            }
+        }
 
         // Get the offsets of the first header components.
         (header, freelist, directory, footer) = vol.second_header_offsets();

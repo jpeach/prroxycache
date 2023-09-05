@@ -1,6 +1,6 @@
 /// Module disk contains direct transliterations of Traffic Server on-disk structures.
 use core::fmt;
-use std::io;
+use std::{io, mem};
 
 use super::types::{Bytes, StoreBlocks};
 
@@ -326,6 +326,32 @@ impl fmt::Debug for VolHeaderFooter {
             .field("dirty", &self.dirty)
             .field("sector_size", &self.sector_size)
             .finish()
+    }
+}
+
+#[derive(Debug)]
+pub struct Freelist {
+    pub entries: Vec<u16>,
+}
+
+impl Freelist {
+    pub fn from_bytes(bytes: &[u8]) -> io::Result<Freelist> {
+        // Must be an exact multiple of the freelist entry size.
+        if (bytes.len() % mem::size_of::<u16>()) != 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid freelist length",
+            ));
+        }
+
+        let mut entries: Vec<u16> = Vec::with_capacity(bytes.len() / mem::size_of::<u16>());
+
+        for i in (0..bytes.len()).step_by(mem::size_of::<u16>()) {
+            let val = u16::from_ne_bytes(bytes[i..i + 2].try_into().unwrap());
+            entries.push(val);
+        }
+
+        Ok(Freelist { entries })
     }
 }
 
