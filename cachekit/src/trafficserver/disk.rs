@@ -14,6 +14,16 @@ pub const SPAN_HEADER_MAGIC: u32 = 0xABCD1237;
 /// Server calls this VOL_MAGIC.
 pub const VOL_HEADER_MAGIC: u32 = 0xF1D0F00D;
 
+/// ENTRY_SIZE is the size of a directory entry on disk. Traffic Server
+/// calls this SIZEOF_DIR. This is the same value as Dir::SIZE_BYTES.
+pub const ENTRY_SIZE: u64 = 10;
+
+/// ENTRIES_PER_BUCKET is the number of Dir entries in each segment
+/// bucket. Traffic Server calls this DIR_DEPTH.
+pub const ENTRIES_PER_BUCKET: u64 = 4;
+pub const MAX_ENTRIES_PER_SEGMENT: u64 = 1 << 16; // 16-bit index
+pub const MAX_BUCKETS_PER_SEGMENT: u64 = MAX_ENTRIES_PER_SEGMENT / ENTRIES_PER_BUCKET;
+
 /// SpanHeader is the header for a Traffic Server cache storage volume (either a file or a block device).
 ///
 /// Traffic Server calls this type "struct DiskHeader".
@@ -352,6 +362,86 @@ impl Freelist {
         }
 
         Ok(Freelist { entries })
+    }
+}
+
+#[derive(Default, Debug, PartialEq)]
+pub struct Dir {
+    pub offset: u64,
+    pub big: u8,
+    pub size: u8,
+    pub tag: u16,
+    pub phase: bool, // Really 1 or 0.
+    pub head: bool,
+    pub pinned: bool,
+    pub token: bool,
+    pub next: u16,
+}
+
+impl Dir {
+    pub const SIZE_BYTES: usize = 10;
+
+    pub fn from_bytes(bytes: &[u8]) -> io::Result<Dir> {
+        if bytes.len() < Dir::SIZE_BYTES {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid directory entry length",
+            ));
+        }
+
+        // Binary layout of the Dir, from Traffic Server source code. Note
+        // that this diagram show big-endian bit layouts. The Traffic Server
+        // macros that decode this assume that it is all little-endian u16
+        // on disk.
+        //
+        // 0                               1
+        //  0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7
+        // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+        // |           Offset(16)          |   Offset(24)  |Big|   Size    |
+        // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+        // |        Tag            |P|H|I|T|            Next               |
+        // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+        // |          Offset(40)           |
+        // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+        //
+        // Offset: Unsigned 40 bits split over 3 fields.
+        // Big: Unsigned 2 bits.
+        // Size: Unsigned 6 bits.
+        // Tag: Unsigned 12 bits.
+        // P: Phase bit.
+        // H: Head bit.
+        // I: Pinned bit.
+        // T: Token bit.
+        // Next: Unsigned 16 bits.
+
+        let binary_dir: [u8; 10] = bytes[0..10].try_into().unwrap();
+        let mut d: Dir = Dir {
+            ..Default::default()
+        };
+
+        d.big = binary_dir[3] & 0x3u8;
+        d.size = binary_dir[3] & 0xFCu8;
+
+        d.phase = (binary_dir[5] & 0x10u8) == 0x10u8;
+        d.head = (binary_dir[5] & 0x20u8) == 0x20u8;
+        d.pinned = (binary_dir[5] & 0x40u8) == 0x40u8;
+        d.token = (binary_dir[5] & 0x80u8) == 0x80u8;
+
+        // Read the "tag" field as a u16, but with the PHIT flags masked.
+        d.tag = u16::from_ne_bytes(binary_dir[4..6].try_into().unwrap());
+        d.tag = d.tag & 0xF000u16;
+
+        d.next = u16::from_ne_bytes(binary_dir[6..8].try_into().unwrap());
+
+        // Set the first 2 bytes from u16.
+        d.offset = u16::from_ne_bytes(binary_dir[0..2].try_into().unwrap()) as u64;
+        // Then the next bytes to make 24 bits.
+        d.offset = d.offset | ((binary_dir[2] as u64) << 16);
+        // Finally the last 2 bytes from u16 to make 40 bits.
+        d.offset =
+            d.offset | ((u16::from_ne_bytes(binary_dir[8..10].try_into().unwrap()) as u64) << 24);
+
+        Ok(d)
     }
 }
 

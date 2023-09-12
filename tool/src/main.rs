@@ -115,6 +115,27 @@ fn main() {
         println!("{}", entry::from_offset(freelist, "freelist"));
         println!("{}", entry::from_offset(directory, "directory"));
 
+        // Now print all the buckets. bucket_count() is the total
+        // number of buckets for all the segments.
+        for b in 0..vol.bucket_count() {
+            let mut dir_bytes = [0u8; disk::Dir::SIZE_BYTES];
+
+            for d in 0..disk::ENTRIES_PER_BUCKET {
+                let offset: u64 = directory + // starting
+                                (b * disk::ENTRIES_PER_BUCKET * disk::Dir::SIZE_BYTES as u64) + // whole buckets
+                                (d * disk::Dir::SIZE_BYTES as u64);
+
+                let dir = s
+                    .read_at(&mut dir_bytes, offset)
+                    .and_then(|_| disk::Dir::from_bytes(&dir_bytes));
+
+                println!(
+                    "{}",
+                    entry::from_offset(offset, format!("dir[{}] {:?}", b, dir).as_str())
+                );
+            }
+        }
+
         println!(
             "{}",
             entry {
@@ -154,15 +175,15 @@ fn main() {
             },
         );
 
+        println!("{}", entry::from_offset(freelist, "freelist"));
+        println!("{}", entry::from_offset(directory, "directory"));
+
         // XXX(jpeach) Experimentally, the second footer fails to decode
         // because it is all zero on disk. Maybe Traffic Server doesn't
         // always write the second footer?
         volfooter = s
             .read_at(&mut volbuf, footer)
             .and_then(|_| disk::VolHeaderFooter::from_bytes(&volbuf));
-
-        println!("{}", entry::from_offset(freelist, "freelist"));
-        println!("{}", entry::from_offset(directory, "directory"));
 
         println!(
             "{}",
