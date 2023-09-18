@@ -113,6 +113,20 @@ fn main() {
             .and_then(|_| disk::VolHeaderFooter::from_bytes(&volbuf));
 
         println!("{}", entry::from_offset(freelist, "freelist"));
+        let f = read_freelist(&s, freelist, vol.segment_count());
+        if f.is_ok() {
+            let f = f.unwrap();
+            println!("freelist:");
+            for i in 0..f.entries.len() {
+                print!("{:>10}:{:>5}", i, f.entries[i]);
+                if i % 4 == 0 {
+                    println!("");
+                } else {
+                    print!("  ");
+                }
+            }
+        }
+
         println!("{}", entry::from_offset(directory, "directory"));
 
         // Now print all the buckets. bucket_count() is the total
@@ -144,20 +158,6 @@ fn main() {
                 label: Some(format!("{:?}", volfooter)),
             }
         );
-
-        let f = read_freelist(&s, freelist, vol.segment_count());
-        if f.is_ok() {
-            let f = f.unwrap();
-            println!("freelist:");
-            for i in 0..f.entries.len() {
-                print!("{:>10}:{:>5}", i, f.entries[i]);
-                if i % 4 == 0 {
-                    println!("");
-                } else {
-                    print!("  ");
-                }
-            }
-        }
 
         // Get the offsets of the first header components.
         (header, freelist, directory, footer) = vol.second_header_offsets();
