@@ -371,7 +371,7 @@ pub struct Dir {
     pub big: u8,
     pub size: u8,
     pub tag: u16,
-    pub phase: bool, // Really 1 or 0.
+    pub phase: u8, // Either 1 or 0.
     pub head: bool,
     pub pinned: bool,
     pub token: bool,
@@ -422,7 +422,11 @@ impl Dir {
         d.big = binary_dir[3] & 0x3u8;
         d.size = binary_dir[3] & 0xFCu8;
 
-        d.phase = (binary_dir[5] & 0x10u8) == 0x10u8;
+        d.phase = if (binary_dir[5] & 0x10u8) == 0u8 {
+            0u8
+        } else {
+            1u8
+        };
         d.head = (binary_dir[5] & 0x20u8) == 0x20u8;
         d.pinned = (binary_dir[5] & 0x40u8) == 0x40u8;
         d.token = (binary_dir[5] & 0x80u8) == 0x80u8;
