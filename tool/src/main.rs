@@ -1,7 +1,7 @@
 use cachekit::trafficserver::disk;
 use cachekit::trafficserver::{Span, Vol};
 use clap::Parser;
-use std::{fmt, io, mem};
+use std::{fmt, io, mem, vec};
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -51,6 +51,39 @@ fn read_freelist(span: &Span, offset: u64, entries: u64) -> io::Result<disk::Fre
         .and_then(|_| disk::Freelist::from_bytes(buf.as_slice()));
 
     freelist
+}
+
+fn read_directory(span: &Span, dir_offset: u64, dir_count: u64) -> io::Result<Vec<disk::Dir>> {
+    let mut bytes = vec![0u8; dir_count as usize * disk::Dir::SIZE_BYTES];
+
+    let nread = span.read_at(&mut bytes, dir_offset)?;
+    if nread < bytes.len() {
+        return Err(io::Error::from(io::ErrorKind::InvalidData));
+    }
+
+    let mut dirs: Vec<disk::Dir> = Vec::new();
+
+    for i in 0..dir_count {
+        let begin = disk::Dir::SIZE_BYTES * i as usize;
+        let end = disk::Dir::SIZE_BYTES * (i + 1) as usize;
+        let d = disk::Dir::from_bytes(&bytes[begin..end])?;
+
+        dirs.push(d);
+    }
+
+    Ok(dirs)
+}
+
+fn walk_freelist<F>(directory: &Vec<disk::Dir>, start: u16, mut f: F) -> ()
+where
+    F: FnMut(&disk::Dir),
+{
+    let mut next = start;
+
+    while next != 0 {
+        f(&directory[next as usize]);
+        next = directory[next as usize].next;
+    }
 }
 
 fn main() {
@@ -113,41 +146,27 @@ fn main() {
             .and_then(|_| disk::VolHeaderFooter::from_bytes(&volbuf));
 
         println!("{}", entry::from_offset(freelist, "freelist"));
-        let f = read_freelist(&s, freelist, vol.segment_count());
-        if f.is_ok() {
-            let f = f.unwrap();
-            println!("freelist:");
-            for i in 0..f.entries.len() {
-                print!("{:>10}:{:>5}", i, f.entries[i]);
-                if i % 4 == 0 {
-                    println!("");
-                } else {
-                    print!("  ");
-                }
+        println!("{}", entry::from_offset(directory, "directory"));
+
+        let f = read_freelist(&s, freelist, vol.segment_count()).unwrap();
+        println!("freelist:");
+        for i in 0..f.entries.len() {
+            print!("{:>10}:{:>5}", i, f.entries[i]);
+            if i % 4 == 0 {
+                println!("");
+            } else {
+                print!("  ");
             }
         }
 
-        println!("{}", entry::from_offset(directory, "directory"));
+        let dir_entries =
+            read_directory(&s, directory, vol.bucket_count() * disk::ENTRIES_PER_BUCKET).unwrap();
 
-        // Now print all the buckets. bucket_count() is the total
-        // number of buckets for all the segments.
-        for b in 0..vol.bucket_count() {
-            let mut dir_bytes = [0u8; disk::Dir::SIZE_BYTES];
-
-            for d in 0..disk::ENTRIES_PER_BUCKET {
-                let offset: u64 = directory + // starting
-                                (b * disk::ENTRIES_PER_BUCKET * disk::Dir::SIZE_BYTES as u64) + // whole buckets
-                                (d * disk::Dir::SIZE_BYTES as u64);
-
-                let dir = s
-                    .read_at(&mut dir_bytes, offset)
-                    .and_then(|_| disk::Dir::from_bytes(&dir_bytes));
-
-                println!(
-                    "{}",
-                    entry::from_offset(offset, format!("dir[{}] {:?}", b, dir).as_str())
-                );
-            }
+        println!("directory has {} entries", dir_entries.len());
+        for i in 0..f.entries.len() {
+            let mut free_entries = 0;
+            walk_freelist(&dir_entries, f.entries[i], |_dir| free_entries += 1);
+            println!("freelist[{}] has {} entries", i, free_entries);
         }
 
         println!(
